@@ -1,27 +1,20 @@
-all:zmq_server zmq_client tcp_client
-
-tcp_client.o:tcp_client.cc 
-	$(CXX) $(CXXFLAGS) -c tcp_client.cc
+.PHONY: subs addon cc
+all: subs
 
 
-zmq_server.o:zmq_server.cc tools.h
-	$(CXX) $(CXXFLAGS) -I/user/local/include -I/home/fanglf/src/leveldb-1.9.0/include -c zmq_server.cc
+subs:
+	if test -d build ; then node-gyp build ; else node-gyp configure ; fi;
+	cd src;make;cd ..
 
-zmq_client.o:zmq_client.cc tools.h
-	$(CXX) $(CXXFLAGS) -I/user/local/include -I/home/fanglf/src/leveldb-1.9.0/include -c zmq_client.cc
+addon:
+	if test -d build ; then node-gyp build ; else node-gyp configure ; fi;
 
-tcp_client:tcp_client.o 
-	$(CXX) $(CXXFLAGS) tcp_client.o -o tcp_client 
-
-
-zmq_client:zmq_client.o 
-	$(CXX) $(CXXFLAGS) -L/usr/local/lib -lzmq zmq_client.o -o zmq_client
-
-zmq_server:zmq_server.o
-	$(CXX) $(CXXFLAGS) -L/usr/local/lib -lzmq -L/home/fanglf/src/leveldb-1.9.0 -lleveldb zmq_server.o -o zmq_server
+cc:
+	cd src;make;cd ..
 
 clean:
-	rm *.o
-	rm zmq_server zmq_client tcp_client
+	node-gyp clean 
+	cd src;rm *.o;rm zmq_server zmq_client tcp_client;
+	cd ..
 
 

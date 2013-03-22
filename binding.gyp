@@ -3,7 +3,7 @@
     {
       'target_name': 'zmq_addon',
       'sources': [
-        'addon/zmq_addon.cc'
+        'addon/zmq_addon.cc',
         './include'
       ],
       'conditions': [
