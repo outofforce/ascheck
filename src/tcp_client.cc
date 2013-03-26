@@ -118,6 +118,7 @@ class do_db_query {
 				rbuf = buffer;
 			}
 			return 0;
+			
 
 		}
 
@@ -169,7 +170,7 @@ class Benchmark {
 
 		void bench() {
 			struct timeval tvstart, tvend;
-			int numbers = 100000;
+			int numbers = 200000;
 			int du = 0;
 			do_db_query query ;
 			assert(0==query.init("127.0.0.1",3000));
@@ -181,9 +182,13 @@ class Benchmark {
 			{
 				gen.RandomString(&(gen.rand),16,&key);
 				query.pingpong(key,ret);
-				if (ret[0] != '0')
+				
+				if (ret[0]=='1')
 					du++;
-				//printf("%s\n",key.c_str());
+
+				if (i%10000 == 0)
+					printf("deal %d\n",i);
+				//printf("==>%s\n",ret.c_str());
 			}
 
 

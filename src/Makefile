@@ -1,4 +1,6 @@
-all:zmq_server zmq_client tcp_client
+
+taget = zmq_server zmq_client tcp_client tcp_server local_dbtest pp simple
+all: $(taget) 
 
 tcp_client.o:tcp_client.cc 
 	$(CXX) $(CXXFLAGS) -c tcp_client.cc
@@ -20,8 +22,23 @@ zmq_client:zmq_client.o
 zmq_server:zmq_server.o
 	$(CXX) $(CXXFLAGS) -L/usr/local/lib -lzmq -L/home/fanglf/src/leveldb-1.9.0 -lleveldb zmq_server.o -o zmq_server
 
+tcp_server:tcp_server.cc 
+	$(CXX) $(CXXFLAGS) tcp_server.cc -o tcp_server -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq
+
+local_dbtest:local_dbtest.cc 
+	$(CXX) $(CXXFLAGS) local_dbtest.cc -o local_dbtest -I../include -I/home/fanglf/src/leveldb-1.9.0/include  -L/home/fanglf/src/leveldb-1.9.0 -lleveldb 
+
+
+pp:zmq_pp.cc 
+	$(CXX) $(CXXFLAGS) zmq_pp.cc -o pp -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq 
+
+simple:simple_server.cc 
+	$(CXX) $(CXXFLAGS) -D_REENTRANT  simple_server.cc -o simple -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq -L. -lunp
+
+
+
 clean:
-	rm *.o
-	rm zmq_server zmq_client tcp_client
+	rm -f *.o
+	rm -f $(taget)
 
 

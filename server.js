@@ -19,7 +19,7 @@ var server = net.createServer(function(c) { //'connection' listener
 			//c.write(''+db.add(data,"1","ghi"))  ;
 			c.write(db.route("0",data))  ;
 			//c.write(md5(data))
-			//c.write('0');
+			c.write('0');
 			});
 		//c.pipe(c);
 		});

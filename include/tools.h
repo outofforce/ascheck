@@ -7,6 +7,7 @@
 #include <iostream>
 #include <assert.h>
 #include <stdint.h>    // for socket
+#include <stdlib.h>    // for atoi 
 
 using namespace std;
 
@@ -50,6 +51,19 @@ inline void my_msg_recv(void *sb, std::string &data) {
 		data = data + std::string(rev_buf,rc);
 		rc = zmq_getsockopt (sb, ZMQ_RCVMORE, &rcvmore, &sz);
 	}
+}
+
+
+inline std::string makeToken(int fd) {
+	char token[9];
+	sprintf(token,"%08d",fd);
+	token[8]='\0';
+	return (token);
+}
+
+inline int getToken(const std::string &buf) {
+	string t=buf.substr(0,8);
+	return atoi(t.c_str());
 }
 
 

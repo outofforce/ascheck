@@ -3,7 +3,7 @@ var util = require('util');
 
 var msg = 0;
 var start = Date.now();
-var MAX_TEST = 500000
+var MAX_TEST = 100000
 var du =0;
 function getMsg() {
 	msg++;

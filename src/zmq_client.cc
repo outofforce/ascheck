@@ -1,4 +1,7 @@
 #include <sys/time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "tools.h"
 using namespace std;
 
@@ -7,13 +10,35 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
+
+	char c;
+	int index  = 0;
+
+
+	while ( (c = getopt(argc, argv, "n:")) != -1) {
+		switch (c) {
+			case 'n':
+				index = atoi(optarg);
+				break;
+		}
+	}
+	printf("index = %d\n",index);
+
 	void *ctx = zmq_init (1);
 	assert (ctx);
 
-	void *sb = zmq_socket (ctx, ZMQ_REQ);
-	assert (sb);
-	int rc = zmq_connect (sb, "ipc:///tmp/fanglf_zero_ipc");
+	void *pb = zmq_socket (ctx, ZMQ_PULL);
+	assert (pb);
+
+
+	string head = makeToken(index);
+	int rc = zmq_bind(pb, (std::string("ipc:///tmp/fanglf_to_server_")+head).c_str());
 	//int rc = zmq_connect(sb, "tcp://127.0.0.1:3000");
+	assert (rc == 0);
+
+	void *sb = zmq_socket (ctx, ZMQ_PUSH);
+	assert (sb);
+	rc = zmq_connect (sb, "ipc:///tmp/fanglf_zero_ipc");
 	assert (rc == 0);
   
 	struct timeval tvstart, tvend;
@@ -28,8 +53,10 @@ int main(int argc, char *argv[])
 		if (i%10000 == 0)
 			printf("deal %d\n",i);
 		gen.RandomString(&(gen.rand),16,&key);
-		my_msg_send(sb,key);
-		my_msg_recv(sb,ret);
+
+		my_msg_send(sb,head+key);
+		my_msg_recv(pb,ret);
+		ret = ret.substr(8,ret.length()-8);
 		if (ret[0] != '0')
 			du++;
 	}
@@ -45,6 +72,9 @@ int main(int argc, char *argv[])
 
 	rc = zmq_close (sb);
 	assert (rc == 0);
+	rc = zmq_close (pb);
+	assert (rc == 0);
+
 
 	rc = zmq_term (ctx);
 	assert (rc == 0);
