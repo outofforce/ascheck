@@ -1,39 +1,18 @@
 
-taget = zmq_server zmq_client tcp_client tcp_server local_dbtest pp simple
+taget = libascheck.so test zmq_config
 all: $(taget) 
 
-tcp_client.o:tcp_client.cc 
-	$(CXX) $(CXXFLAGS) -c tcp_client.cc
+libascheck.so:ascheck.h ascheck.cc 
+	$(CXX) $(CXXFLAGS) -fPIC -shared -o libascheck.so ascheck.cc  -I/usr/local/include -L/usr/local/lib -lzmq
+
+test: test.cc libascheck.so
+	$(CXX) $(CXXFLAGS) -o test test.cc -I../include -I/usr/local/include -L/usr/local/lib -lzmq -L. -lascheck
+
+zmq_config:zmq_config.cc 
+	$(CXX) $(CXXFLAGS) zmq_config.cc -o zmq_config -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq 
 
 
-zmq_server.o:zmq_server.cc ../include/tools.h
-	$(CXX) $(CXXFLAGS) -I/user/local/include -I../include -I/home/fanglf/src/leveldb-1.9.0/include -c zmq_server.cc
 
-zmq_client.o:zmq_client.cc ../include/tools.h
-	$(CXX) $(CXXFLAGS) -I/user/local/include -I../include -I/home/fanglf/src/leveldb-1.9.0/include -c zmq_client.cc
-
-tcp_client:tcp_client.o 
-	$(CXX) $(CXXFLAGS) tcp_client.o -o tcp_client  -I../include
-
-
-zmq_client:zmq_client.o 
-	$(CXX) $(CXXFLAGS) -L/usr/local/lib -lzmq zmq_client.o -o zmq_client
-
-zmq_server:zmq_server.o
-	$(CXX) $(CXXFLAGS) -L/usr/local/lib -lzmq -L/home/fanglf/src/leveldb-1.9.0 -lleveldb zmq_server.o -o zmq_server
-
-tcp_server:tcp_server.cc 
-	$(CXX) $(CXXFLAGS) tcp_server.cc -o tcp_server -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq
-
-local_dbtest:local_dbtest.cc 
-	$(CXX) $(CXXFLAGS) local_dbtest.cc -o local_dbtest -I../include -I/home/fanglf/src/leveldb-1.9.0/include  -L/home/fanglf/src/leveldb-1.9.0 -lleveldb 
-
-
-pp:zmq_pp.cc 
-	$(CXX) $(CXXFLAGS) zmq_pp.cc -o pp -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq 
-
-simple:simple_server.cc 
-	$(CXX) $(CXXFLAGS) -D_REENTRANT  simple_server.cc -o simple -I../include -I/usr/local/include -I/home/fanglf/src/leveldb-1.9.0/include  -lpthread -L/home/fanglf/src/leveldb-1.9.0 -lleveldb -L/usr/local/lib -lzmq -L. -lunp
 
 
 

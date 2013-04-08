@@ -1,35 +1,14 @@
 {
   'targets': [
     {
-      'target_name': 'zmq_addon',
+      'target_name': 'asleveldb',
       'sources': [
-        'addon/zmq_addon.cc',
-        './include'
+        'addon/asleveldb.cc'
       ],
       'conditions': [
         ['OS=="linux"', {
           'include_dirs': [
-            '/home/fanglf/src/leveldb-1.9.0/include',
-            '/usr/local/include',
-            './include'
-          ],
-          'libraries': [
-            '-L/home/fanglf/src/leveldb-1.9.0 -lleveldb '
-            '-L/usr/local/lib -lzmq'
-          ]
-        }]
-      ]
-    },
-    {
-      'target_name': 'addon',
-      'sources': [
-        'addon/addon.cc'
-      ],
-      'conditions': [
-        ['OS=="linux"', {
-          'include_dirs': [
-            '/home/fanglf/src/leveldb-1.9.0/include',
-            './include'
+            '/home/fanglf/src/leveldb-1.9.0/include '
           ],
           'libraries': [
             '-L/home/fanglf/src/leveldb-1.9.0 -lleveldb '

@@ -1,1 +1,133 @@
 快速的排重系统
+
+
+
+1. 把协议完成 ，大致完成 ，^_^
+2. 完善 test 入长入参数 ，大致完成  ，^_^
+3. 多进程的测试程序模仿 生产环境 ，还没做
+4. 服务端的一些配置问题，每个服务要任清自己。  ^_^
+5. 处理异常情况。 ^_^ 
+6. 数据包接受问题，协议需要加以个结束标志   做了一半 ，客户端 没有完成  
+7. 当服务端一个服务crash 不会影响 客户端 creash ^_^
+8. 客户端通过环境变量来获取服务其地址信息  ^_^
+9. 友善的编译环境
+10. 
+
+11. 友善的配置接口
+12. 服务端 ，如果删除了某个db ，保证服务不掉。。。。。。 奇怪，删除后程序没问题，还可以继续写 ？？？
+13. 程序支持关闭数据库并删除对应的数据库环境 ，（需要密钥？） 用nodejs 做一个管理程序，这个管理程序从配置服务器上读取配置，然后向 所有服务发送删除某个part的请求 ，服务端要支持接受协议，关闭数据库，然后将数据库磁盘物理删除或移动 。 
+
+
+
+
+	
+
+
+
+	架构 
+	客户端 通过 zeromq 从配置服务上读取 ascheck 服务分布 。 也就是一共有多少个服务，每个服务的iip和端口 。 每个ascheck 服务映射成 id ，id 从 1 开始到 n ，n 为ascheck 服务的个数  
+	客户端通过普通的hash ，将key值映射到[1,n],对应一个ascheck服务上，将内容传送给服务。 客户端会维护所有到服务的连接
+
+	ascheck 服务接受到消息，将信息存入消息关联的名为 part 的leveldb上，每个 ascheck 有自己 id， 所以对应的leveldb会被创建到 $db_path/id_part   其中db_path 是ascheck 的入参 ，表示所有所有leveldb的总目录
+
+
+	依赖的第三方库 
+	nodejs , zeromq ,leveldb 
+
+	目录介绍 
+	addon 是 nodejs 的 c 扩展  ascheck 服务端对 leveldb 的操作在这里实现供leveldb 代码调用 
+	src ，实现了客户端代码 ，一个简单的单紧程测试 和 ascheck的配置服务器，客户端api是线程不安全的。
+	server_cluster.js  启动ascheck 的主程序 
+	server_config.js  配置 ascheck 服务程序 
+	server.js  单个 ascheck服务程序 ，测试用 
+
+	编译
+	需要修改 src/Makefile 和 biinding.gyp 中 zmq 和 leveldb 对应目录。 
+	然后 make， make 会调用 node-gyp 来编译 nodejs 的扩展程序
+
+	TODO ：
+	存在内存泄漏  ，已经解决 
+
+
+
+	运行 
+	node server_config.js 
+	cd src ; nohup ./zmq_config -d /tmp/config  -u tcp://127.0.0.1:3000 &
+	cd .. ; nohup node server_cluste.js -n 3 -b 1 -d /tmp &
+	cd src; ./test -t all -c 10000 -n gprs_20130401  来测试 
+
+	会在 /tmp 下面生成 1_gprs_20130401 2_gprs_20130401 3_gprs_20130401 这样三个测试用的 levedb 数据库 。
+
+	add bench .... 
+	total service num = 3
+	service_index(1) 127.0.0.1:3001
+	service_index(2) 127.0.0.1:3002
+	service_index(3) 127.0.0.1:3003
+		deal 0
+		deal 10000 use 1184(ms),du = 0
+		8445 transaction per second
+		add bench .... end .... 
+
+		query bench .... 
+			deal 0
+			deal 10000 use 1127(ms)
+			8873 transaction per second
+			query bench .... end .... 
+
+			del bench .... 
+				deal 0
+				deal 10000 use 1121(ms)
+				8920 transaction per second
+				del bench .... end .... 
+
+				  serv(127.0.0.1:3001) handle request 9888
+					  serv(127.0.0.1:3002) handle request 10083
+						  serv(127.0.0.1:3003) handle request 10029
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+							 
+
+
+
+
+
+
+
+
+							 不同过service 直接调用 addon 写入 leveldb
+							 [fanglf@outofforce js]$ node test.js
+							 bench begin
+							 Completed 100000 in 7431 ms, du=100000
+							 13457 transaction per second
+							 gprs_20130401
+
+							 nodejs 直接返回
+							 [fanglf@outofforce js]$ ./tcp_client 
+							 100000 use 4657(ms),du = 0
+							 21473 transaction per second
+							 nodejs 调用空 addon
+							 [fanglf@outofforce js]$ ./tcp_client 
+							 100000 use 5713(ms),du = 0
+							 17503 transaction per second
+							 addon 通过 ipc与 空的 zeromq 服务连接
+							 [fanglf@outofforce js]$ ./tcp_client 
+							 100000 use 15866(ms),du = 100000
+							 6302 transaction per second
+							 zeromq 写入 查询 leveldb 100000次 
+							 [fanglf@outofforce js]$ ./tcp_client 
+							 100000 use 17877(ms),du = 100000
+							 5593 transaction per second
