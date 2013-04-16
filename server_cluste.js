@@ -144,6 +144,6 @@ if (cluster.isMaster) {
 
 process.on('SIGTERM',function() {
 	for (var item in workers) {
-		process.kill(item.pid)
+		process.kill(workers[item].process.pid);
 	}
 });

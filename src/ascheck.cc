@@ -21,16 +21,7 @@
 #include <fcntl.h>
 */
 
-#define BUFFER_SIZE 128 
-
-struct svc_item {
-	std::string addr;
-	int port;
-	bool connected;
-	int socket_fd;
-	int count;
-	svc_item():count(0),socket_fd(0),connected(false),port(0) {}
-};
+#define BUFFER_SIZE 512 
 
 class as_exception {
 	int _code;
@@ -41,8 +32,104 @@ class as_exception {
 		int code() {return _code;}
 };
 
+class ashash {
+	static unsigned long DJBhash(const char *p ,int len) {
+			unsigned long hash = 5381;
+			for (int i=0;i<len;i++)
+				hash = ((hash<<5)+hash)+p[i];
+			return hash;
+	}
+	public:
+		static int getHashIndex(const std::string &key,const int count) {
+			return (int)(DJBhash(key.c_str(),key.length())%count + 1);
+
+		}
+};
+
+class asproto {
+	public:
+	enum OP {ADD=1,QUERY=2,DEL=3,WRITE=4};
+
+	static void checkLength(const std::string &value,const int len) {
+		if (value.length() > len)
+			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,
+						"Data length is too large");
+	}
+
+	//TODO length need limit
+	static std::string make3Proto(
+			const std::string &part,
+			const std::string &key,
+			const std::string &value,
+			const int op
+			) 
+	{
+		if (12+part.length()+key.length()+value.length() >= BUFFER_SIZE)
+			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,"send data is too large");
+		checkLength(part,99);
+		checkLength(key,99);
+		checkLength(value,9999);
+
+		char buf[BUFFER_SIZE];
+		sprintf(buf,"%02d%02d%02d%04d%s%s%s\r\n",op,
+				(int)part.length(),(int)key.length(),(int)value.length(),
+				part.c_str(),key.c_str(),value.c_str());
+		
+		return buf;
+
+	}
+
+	static std::string make2Proto(
+			const std::string &part,
+			const std::string &key,
+			const int op
+			) 
+	{
+		if (12+part.length()+key.length() >= BUFFER_SIZE)
+			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,"send data is too large");
+		checkLength(part,99);
+		checkLength(key,99);
+
+		char buf[BUFFER_SIZE];
+		sprintf(buf,"%02d%02d%02d%04d%s%s%s\r\n",op,
+				(int)part.length(),(int)key.length(),0,
+				part.c_str(),key.c_str(),"");
+		
+		return buf;
+	}
+
+	// data = 00somedata
+	// 00 success 
+	//  
+	static int pareProto(
+			const std::string &data,
+			std::string &value
+			) 
+	{
+		// 00\r\n at least 4 
+		if (data.length()<=3)
+			throw as_exception(AS_E_PROTO_PRASE_ERROR,"recv data, proto error!");
+		std::string t = data.substr(0,2);
+		value = data.substr(2,data.length()-4);
+		return atoi((data.substr(0,2)).c_str());
+	}
+
+};
+
+struct svc_item {
+	std::string addr;
+	int port;
+	bool connected;
+	int socket_fd;
+	int count;
+	svc_item():count(0),socket_fd(0),connected(false),port(0) {}
+};
+
+
+
 class service_domain {
 	std::string _server_addr;
+	int _server_port;
 	int _s_count;
 	std::map<int,svc_item> _serv_map;
 	std::map<int,svc_item>::iterator _servit;
@@ -57,7 +144,14 @@ class service_domain {
 		if ( p == NULL)
 			throw as_exception(AS_E_ENV_CONFIG_SERVER_UNDFINE,"evn ASCHECK_CONFIG_SERVER is undefine"); 
 
-		_server_addr=p;
+		char *t = NULL;
+		t = strstr(p,":");
+		if (t == NULL)
+			throw as_exception(AS_E_ENV_CONFIG_SERVER_UNDFINE,"evn ASCHECK_CONFIG_SERVER format error! \n eg:127.0.0.1:3000"); 
+		_server_addr = std::string(p,t);
+		_server_port = atoi(std::string(t+1).c_str());
+	
+		//_server_addr=p;
 		//_server_addr="tcp://127.0.0.1:3000";
 	}
 
@@ -142,6 +236,7 @@ class service_domain {
 	service_domain():_inited(false),ctx(NULL),pb(NULL){}
 	void release() {
 
+		/*
 		if (pb != NULL) {
 			zmq_close (pb);
 			pb = NULL;
@@ -151,12 +246,72 @@ class service_domain {
 			zmq_term (ctx);
 			ctx = NULL;
 		}
+		*/
 	}
 	void init() {
 		int rc;
 		if (_inited) return ;
 		_getServerAddr();
 
+		rc = init_socket(_server_addr,_server_port);
+
+		svc_item config_item;
+		config_item.addr=_server_addr;
+		config_item.port=_server_port;
+		config_item.connected = true;
+		config_item.socket_fd = rc;
+		printf("config_service(0) %s:%d\n",config_item.addr.c_str(),config_item.port);
+		_serv_map[0]=config_item;
+		std::string v1,v2;
+		v1 = asproto::make2Proto("","SERVICE_COUNT",asproto::QUERY);
+		pingpong(0,v1,v2);
+		rc = asproto::pareProto(v2,v1);
+		if (rc!=0)
+			throw as_exception(AS_E_CONFIG_ERROR,"SERVICE_COUNT undefine in config server");
+
+		_s_count = atoi(v1.c_str());
+		printf("total service num = %d\n",_s_count);
+
+		char num[128];
+		for (int j=0;j<_s_count;j++) {
+			int i=j+1; 
+			svc_item item;
+			sprintf(num,"ASCHECK_ADDR_%d",i);	
+			v1 = asproto::make2Proto("",num,asproto::QUERY);
+			pingpong(0,v1,v2);
+			rc = asproto::pareProto(v2,v1);
+			if (rc != 0) 
+				throw as_exception(AS_E_CONFIG_ERROR,
+						std::string(num)+" undefine in config server");
+
+			char *t = NULL;
+			char *p = (char*)v1.c_str();
+			t = strstr(p,":");
+			if (t == NULL)
+				throw as_exception(AS_E_ENV_CONFIG_SERVER_UNDFINE,"ASCHECK_ADDR format error! \n eg:127.0.0.1:3000"); 
+
+
+			item.addr=std::string(p,t);
+			item.port=atoi(std::string(t+1).c_str());
+			/*
+			sprintf(num,"ASCHECK_PORT_%d",i);	
+			v1 = asproto::make2Proto("",num,asproto::QUERY);
+			pingpong(0,v1,v2);
+			rc = asproto::pareProto(v2,v1);
+			if (rc != 0) 
+				throw as_exception(AS_E_CONFIG_ERROR,
+						std::string(num)+" undefine in config server");
+			item.port=atoi(v1.c_str());
+			*/
+			item.connected = false;
+			item.socket_fd = 0;
+			printf("service_index(%d) %s:%d\n",i,item.addr.c_str(),item.port);
+			_serv_map[i]=item;
+		}
+		_inited = true;
+
+
+		/*
 		ctx = zmq_ctx_new();
 		if (ctx == NULL)
 			throw as_exception(AS_E_ZMQ_CTX_NEW_ERROR,"create zmq ctx error");
@@ -210,7 +365,7 @@ class service_domain {
 
 		rc = zmq_close (pb);
 		rc = zmq_term (ctx);
-		_inited = true;
+		*/
 
 	}
 
@@ -307,91 +462,6 @@ class service_domain {
 
 };
 
-class ashash {
-	static unsigned long DJBhash(const char *p ,int len) {
-			unsigned long hash = 5381;
-			for (int i=0;i<len;i++)
-				hash = ((hash<<5)+hash)+p[i];
-			return hash;
-	}
-	public:
-		static int getHashIndex(const std::string &key,const int count) {
-			//printf("%ld\n",DJBhash(key.c_str(),key.length())%count);
-			return (int)(DJBhash(key.c_str(),key.length())%count + 1);
-
-		}
-};
-
-// 1 add 
-// 2 query
-// 3 del
-class asproto {
-	public:
-	static std::string makeAddProto(
-			const std::string &part,
-			const std::string &key,
-			const std::string &value
-			) 
-	{
-		char buf[BUFFER_SIZE];
-		if (12+part.length()+key.length()+value.length() >= BUFFER_SIZE)
-			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,"send data is too large");
-		sprintf(buf,"%02d%02d%02d%04d%s%s%s\r\n",1,
-				part.length(),key.length(),value.length(),
-				part.c_str(),key.c_str(),value.c_str());
-		
-		return buf;
-
-	}
-
-	static std::string makeDelProto(
-			const std::string &part,
-			const std::string &key
-			) 
-	{
-		char buf[BUFFER_SIZE];
-		if (12+part.length()+key.length() >= BUFFER_SIZE)
-			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,"send data is too large");
-		sprintf(buf,"%02d%02d%02d%04d%s%s%s\r\n",3,
-				part.length(),key.length(),0,
-				part.c_str(),key.c_str(),"");
-		
-		return buf;
-	}
-
-	static std::string makeQueryProto(
-			const std::string &part,
-			const std::string &key
-			) 
-	{
-		char buf[BUFFER_SIZE];
-		if (12+part.length()+key.length() >= BUFFER_SIZE)
-			throw as_exception(AS_E_SEND_DATA_IS_TO_LARGE,"send data is too large");
-		sprintf(buf,"%02d%02d%02d%04d%s%s%s\r\n",2,
-				part.length(),key.length(),0,
-				part.c_str(),key.c_str(),"");
-		
-		return buf;
-	}
-
-	// data = 00somedata
-	// 00 success 
-	//  
-	static int pareProto(
-			const std::string &data,
-			std::string &value
-			) 
-	{
-		// 00\r\n at least 4 
-		if (data.length()<=3)
-			throw as_exception(AS_E_PROTO_PRASE_ERROR,"recv data, proto error!");
-		std::string t = data.substr(0,2);
-		value = data.substr(2,data.length()-4);
-		return atoi((data.substr(0,2)).c_str());
-	}
-
-};
-
 
 /*
  *  if key is in db , return 1
@@ -410,7 +480,7 @@ int ascheck::add(
 	try {
 	domain.init() ;
 	int index = ashash::getHashIndex(key,domain.getSvcCount());
-	v1 = asproto::makeAddProto(part,key,value);
+	v1 = asproto::make3Proto(part,key,value,asproto::ADD);
 	domain.pingpong(index,v1,v2);
 	int rc = asproto::pareProto(v2,v1);
 
@@ -447,7 +517,7 @@ int ascheck::query(
 	try {
 		domain.init() ;
 		int index = ashash::getHashIndex(key,domain.getSvcCount());
-		v1 = asproto::makeQueryProto(part,key);
+		v1 = asproto::make2Proto(part,key,asproto::QUERY);
 		domain.pingpong(index,v1,v2);
 		int rc = asproto::pareProto(v2,v1);
 
@@ -486,7 +556,7 @@ int ascheck::del(
 	try {
 		domain.init() ;
 		int index = ashash::getHashIndex(key,domain.getSvcCount());
-		v1 = asproto::makeDelProto(part,key);
+		v1 = asproto::make2Proto(part,key,asproto::DEL);
 		domain.pingpong(index,v1,v2);
 		int rc = asproto::pareProto(v2,v1);
 
