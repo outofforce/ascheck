@@ -8,6 +8,8 @@ var assert = require('assert');
 var config_path=process.cwd(); //default config db path
 var port=3000; // default config_server port
 var dbname='config'; // default config db name
+var index_list='1'; // default config db name
+var indexs = {};
 
 process.argv.forEach(function (val, index, array) {
 		if (val == "-p") {
