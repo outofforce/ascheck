@@ -1,5 +1,5 @@
 
-taget = libascheck.so test zmq_config
+taget = libascheck.so test
 all: $(taget) 
 
 libascheck.so:ascheck.h ascheck.cc 
