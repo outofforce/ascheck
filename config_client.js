@@ -1,20 +1,10 @@
 var net = require('net');
 var util = require('util');
 var fs= require('fs');
+var astool= require('./astools.js')
 
 var config_cache = {};
 var config_array = new Array();
-
-function split(doc,dem) {
-	var pos = 0;
-	pos = doc.indexOf(dem);
-	var pair={};
-	if (pos == -1) { pair[0]=1; return pair; }
-	pair[0]= 0;
-	pair[1]= doc.substring(0,pos);
-	pair[2]= doc.substring(pos+dem.length,doc.length);
-	return pair;
-}
 
 var conf_file = '';
 process.argv.forEach(function (val, index, array) {
@@ -43,7 +33,7 @@ function prase_config_file() {
 		end = doc.indexOf('\n',begin);
 		if (end == -1) break;
 		var item = doc.substring(begin,end);
-		var data = split(item,' ');
+		var data = astool.split(item,' ');
 		if (data[0] == 0) {
 			if (data[1].indexOf('SERVICE_COUNT') != -1) {
 				// SERVICE_COUNT
@@ -58,11 +48,11 @@ function prase_config_file() {
 				var id_begin,id_end,ip,port_begin;
 				var id_rang = data[1].substring(
 															'SERV_ADDR_RANG_'.length,data[1].length);
-				var tmp = split(id_rang,'..');
+				var tmp = astool.split(id_rang,'..');
 				if (tmp[0] == 1) continue;
 				id_begin=tmp[1];
 				id_end=tmp[2];
-				tmp = split(data[2],':');
+				tmp = astool.split(data[2],':');
 				if (tmp[0] == 1) continue;
 				ip = tmp[1];
 				port_begin=tmp[2];
@@ -86,34 +76,11 @@ function prase_config_file() {
 
 
 
-function makeProto(key,value) {
-	// how too
-	var str="0400";
-	if (String(key).length > 9)
-		str = str + String(key).length.toString();
-	else 
-		str = str + '0'+ String(key).length.toString();
-		
-	if (String(value).length >999)
-		str = str + String(value).length.toString();
-	else if (String(value).length >99)
-		str = str + '0'+ String(value).length.toString();
-	else if (String(value).length >9)
-		str = str + '00'+ String(value).length.toString();
-	else
-		str = str + '000'+ String(value).length.toString();
-
-	str = str+String(key)+String(value)+'\r\n';
-	
-	return str;
-}	
-
-
 var send_index=0;
 var s;
 var client = net.connect({port: 3000},function() { //'connect' listener
 		console.log('connect config_server sucess!');
-		s=makeProto(
+		s=astool.makeProto(
 				config_array[send_index],
 				config_cache[config_array[send_index]]);
 
@@ -136,7 +103,7 @@ client.on('data', function(data) {
 			return ;
 		}
 	
-		s=makeProto(
+		s=astool.makeProto(
 				config_array[send_index],
 				config_cache[config_array[send_index]]);
 

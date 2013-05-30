@@ -4,6 +4,7 @@ var crypto = require('crypto');
 var db = require('./build/Release/asleveldb');
 var fs = require('fs');
 var assert = require('assert');
+var astool = require('./astools.js');
 
 var config_path=process.cwd(); //default config db path
 var port=3000; // default config_server port
@@ -41,38 +42,30 @@ var server = net.createServer(function(c) { //'connection' listener
 				//console.log(data.toString());
 				if (data.indexOf('\r\n') != -1) { 
 
-					var key,value,part,begin,end;
-					var op = Number(data.substring(0,2));
-					var partlen = data.substring(2,4);
-					var keylen = data.substring(4,6);
+					var tp = astool.praseProto(data);
+					// modify config db, part must be config; 
+					tp['part']=dbname;
+					if (tp['op'] == 4) {
+						// check
+						c.write('0'+db.write(tp['key'],tp['value'],tp['part'])+'\r\n');
 
-					begin=10;
-					end=10+Number(partlen);
-
-					part = dbname;
-
-					begin = end;
-					end=end+Number(keylen);
-					key= data.substring(begin,end);
-
-					if (op == 4) { // write
-						var valuelen = data.substring(6,10);
-						begin=end;
-						end=end+Number(valuelen);
-						value= data.substring(begin,end);
-						//console.log('----- '+part+ ' ---- ' + key+ ' --- ' + value+ ''); 
-						c.write('0'+db.write(key,value,part)+'\r\n');
-					} else if (op == 2) {
-						var temp = db.query(key,part);
+					} else if (tp['op'] == 2)  {
+						// query
+						var temp = db.query(tp['key'],tp['part']);
 						if (temp.ok == 1) {
 							c.write('01'+'\r\n');
 						} else {
 							c.write('00'+temp.v+'\r\n');
 						}
-					} else if (op == 3) {
-						c.write('0'+db.del(key,part)+'\r\n');
-					}
-					data = '';
+
+					} else if (tp['op'] == 3)  {
+						// del
+						c.write('0'+db.del(tp['key'],tp['part'])+'\r\n');
+
+					} 
+
+					data="";
+
 				}
 
 			});

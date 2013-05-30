@@ -37,7 +37,8 @@ class Benchmark {
 			for (int i=0;i<numbers;i++)
 			{
 
-				gen.RandomString(&(gen.rand),16,&key);
+				gen.RandomString(&(gen.rand),32,&key);
+				value = key;
 				rc = ascheck::add(part,key,value);
 				assert(rc>=0);
 				if (rc == 1)
@@ -68,7 +69,7 @@ class Benchmark {
 			for (int i=0;i<numbers;i++)
 			{
 
-				gen.RandomString(&(gen.rand),16,&key);
+				gen.RandomString(&(gen.rand),32,&key);
 				rc = ascheck::del(part,key);
 				assert(rc==0);
 				
@@ -98,7 +99,7 @@ class Benchmark {
 			for (int i=0;i<numbers;i++)
 			{
 
-				gen.RandomString(&(gen.rand),16,&key);
+				gen.RandomString(&(gen.rand),32,&key);
 				rc = ascheck::query(part,key,v);
 				assert(rc>=0);
 				
