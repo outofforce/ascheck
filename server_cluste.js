@@ -13,15 +13,15 @@ var workers = {};
 var indexs_work = {};
 var serv_addrs = {};
 
-var startport = 3000,count = 1,dbpath=process.cwd();
+var serv_port = 3000,count = 1,dbpath=process.cwd();
 var index_str = '1';
 
 process.argv.forEach(function (val, index, array) {
 	//console.log(index + ': ' + val);
 	if (val == "-n") 
 	count = process.argv[index+1];
-	else if (val == "-p") 
-	startport= process.argv[index+1];
+	else if (val == "--service_port") 
+	serv_port = process.argv[index+1];
 	else if (val == "-i")
 	index_str = process.argv[index+1];
 	else if (val == "-d") {
@@ -37,7 +37,8 @@ var serv_array = astool.prase_config_arg(index_str);
 
 
 function fetch_from_config(s_indexs) {
-	var c = net.createConnection(3000);
+
+	var c = net.createConnection(serv_port);
 	var data='';
 	var now_index=0;
 	c.on('data', function(buf) {
