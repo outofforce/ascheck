@@ -7,6 +7,54 @@ using namespace v8;
 leveldb::DB *db = NULL;	
 leveldb::Status status;
 
+int getDataFromString(
+		const std::string &src,
+		const std::string &key,
+		std::string &value) {
+	size_t pos = src.find(key+"=");
+	if (pos == std::string::npos)
+		return -1;
+	else {
+		pos = pos+key.size()+1;
+		size_t e_pos = src.find(";",pos);
+		if (e_pos == std::string::npos) e_pos = src.size(); 
+		if (e_pos-pos>0) {
+			value = src.substr(pos,e_pos-pos);
+			if (value == "NULL")
+				return -1;
+			else 
+				return 0;
+		} else {
+			return -1;
+		}
+	}
+
+}
+
+int getDataFromString(
+		const std::string &src,
+		const std::string &key,
+		size_t &value) {
+	size_t pos = src.find(key+"=");
+	if (pos == std::string::npos)
+		return -1;
+	else {
+		pos = pos+key.size()+1;
+		size_t e_pos = src.find(";",pos);
+		if (e_pos == std::string::npos) e_pos = src.size(); 
+		if (e_pos-pos>0) {
+			std::string t= src.substr(pos,e_pos-pos);
+			if (t== "NULL")
+				return -1;
+			else  {
+				value = (size_t)atol(t.c_str());
+				return 0;
+			}
+		} else {
+			return -1;
+		}
+	}
+}
 
 
 class db_pool { 
@@ -14,14 +62,50 @@ class db_pool {
 		std::map<std::string,leveldb::DB * >::iterator dbit;
 		std::map<std::string,leveldb::DB * > _db_pool;
 		std::string _db_path;
+		leveldb::CompressionType _db_comp_type;
+		int _db_max_open_files;
+		size_t _db_write_buffer_size;
+		size_t _db_block_size;
+
+		void _loadDbConfig(const std::string &src) {
+
+			_db_comp_type = leveldb::kNoCompression;
+			_db_max_open_files = 0; // use level default
+			_db_write_buffer_size =0; // use level default
+			_db_block_size =0; // use level default 
+			size_t t_v;
+			if (getDataFromString(src,"DB_CompressionType",t_v) == 0) {
+				if (t_v == 1) {
+					_db_comp_type=leveldb::kSnappyCompression;
+					printf("\tDB_CONFIG: use snappy compression\n");
+				}
+			} 
+
+		  if (getDataFromString(src,"DB_block_size",t_v) == 0) {
+					_db_block_size=t_v;
+					printf("\tDB_CONFIG: block_size = %lu\n",t_v);
+			} 
+
+		  if (getDataFromString(src,"DB_write_buffer_size",t_v) == 0) {
+					_db_write_buffer_size=t_v;
+					printf("\tDB_CONFIG: write_buffer_size= %lu\n",t_v);
+			} 
+
+		  if (getDataFromString(src,"DB_max_open_files",t_v) == 0) {
+					_db_max_open_files=(int)t_v;
+					printf("\tDB_CONFIG: max_open_files = %lu\n",t_v);
+			} 
+		}
+		
 	public:
-		void init(const std::string &index,const std::string &prefix) {
+		void init(const std::string &index,const std::string &prefix,const std::string &dbarg) {
 			if (index.length() == 0)
 					_db_path = prefix+"/";
 			else 
 				 _db_path = prefix+"/"+index+"_";
 
-
+			_loadDbConfig(dbarg);
+			
 			//printf("%s\n",_db_path.c_str());
 
 		}
@@ -32,6 +116,17 @@ class db_pool {
 				leveldb::Options options;	
 				options.create_if_missing = true;	
 				options.error_if_exists = false;	
+				if (_db_max_open_files>0)
+					options.max_open_files = _db_max_open_files;
+
+				if (_db_block_size>0)
+					options.block_size= _db_block_size;
+
+				if (_db_write_buffer_size>0)
+					options.write_buffer_size= _db_write_buffer_size;
+
+				options.compression= _db_comp_type;;
+
 				printf("open db ctx = %s\n",(_db_path+dbname).c_str());
 				status = leveldb::DB::Open(options, _db_path+dbname, &db);
 
@@ -176,8 +271,9 @@ Handle<Value> DbInit(const Arguments& args) {
 
 		String::AsciiValue path(args[0]);
 		String::AsciiValue index(args[1]);
+		String::AsciiValue dbconfig(args[2]);
 
-		_pool.init(*index,*path);
+		_pool.init(*index,*path,*dbconfig);
 		Local<Number> num = Number::New(0);
 		return scope.Close(num);
 }

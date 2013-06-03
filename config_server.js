@@ -85,5 +85,5 @@ server.on('error', function (e) {
 server.listen(port, function() { 
 
 		console.log('server bound on '+port);
-		db.dbinit(config_path,"");
+		db.dbinit(config_path,'','');
 });

@@ -124,6 +124,7 @@ config_ready_event.on('readygo',function() {
 		var index = process.env['worker_index'];
 		var db_path_pre = process.env['db_path_pre'];
 		var start_port= process.env['start_port'];
+		var dbconfig='DB_CompressionType=NULL;DB_block_size=NULL;DB_write_buffer_size=NULL;DB_max_open_files=NULL'; 
 
 		var server = net.createServer(function(c) { //'connection' listener
 			console.log('client connected');
@@ -179,7 +180,7 @@ config_ready_event.on('readygo',function() {
 
 		server.listen(Number(start_port), function() { 
 			console.log('server %d start at port %d ....',index,Number(start_port));
-			db.dbinit(db_path_pre,index);
+			db.dbinit(db_path_pre,index,dbconfig);
 		});
 
 	}
