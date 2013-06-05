@@ -1,11 +1,58 @@
 #include <node.h>
 
 #include <leveldb/db.h>
+#include <openssl/hmac.h>
+#include <uuid/uuid.h>
+
 #include <map>
 using namespace v8;
 
 leveldb::DB *db = NULL;	
 leveldb::Status status;
+
+
+int ashmac(const std::string &data, std::string &digest) {
+
+	HMAC_CTX ctx;
+	const char *key="dfs3f00_)*(&98634sdfasd;ldj0830iuoremzi0oer'zddf0s782-0234fjdfat";
+	unsigned char mdvalue[EVP_MAX_MD_SIZE];
+	unsigned int vlen;
+	const EVP_MD *md = EVP_sha256();
+	if(!md)
+		return -1;
+
+	HMAC_CTX_init(&ctx);
+	HMAC_Init(&ctx,key,strlen(key), md);
+	HMAC_Update(&ctx, (unsigned char*)data.c_str(), strlen(data.c_str()));
+	HMAC_Final(&ctx, mdvalue,&vlen);
+	HMAC_CTX_cleanup(&ctx);
+	unsigned char out[EVP_MAX_MD_SIZE*2+1];
+	char *p = (char *)out;
+	for (int i=0;i<(int)vlen;i++)
+	{
+		sprintf(p,"%02x",(unsigned int)mdvalue[i]);
+		p += 2;
+	}
+	*p='\0';
+	digest = (char*)out;
+	return 0;
+}
+
+std::string asGetUUID() {
+	unsigned char out[32*4+1];
+	char *p = (char *)out;
+	uuid_t uu;
+	for (int j=0;j<4;j++){
+		uuid_generate(uu);
+		for (int i=0;i<16;i++)
+		{
+			sprintf(p,"%02x",(unsigned int)uu[i]);
+			p += 2;
+		}
+	}
+	*p='\0';
+	return (char *)out;
+}
 
 int getDataFromString(
 		const std::string &src,
@@ -262,6 +309,45 @@ Handle<Value> Query(const Arguments& args) {
 }
 
 
+Handle<Value> getRandom(const Arguments& args) {
+	  HandleScope scope;
+		std::string value = asGetUUID();
+		return scope.Close(String::New(value.c_str()));
+}
+
+Handle<Value> asAuth(const Arguments& args) {
+	  HandleScope scope;
+
+		if (args.Length() < 2) {
+			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+			return scope.Close(Undefined());
+		}
+
+		v8::String::AsciiValue randomdata(args[0]); 
+		v8::String::AsciiValue data(args[1]); 
+
+	  //printf("err %d,%s,%s\n",args.Length(),*randomdata,*data);
+
+		std::string asdigest;
+    int rc = ashmac(*randomdata,asdigest); 
+	  //printf("err==: %s\n",asdigest.c_str());
+		if (rc !=0) {
+			ThrowException(Exception::TypeError(String::New("Unkown message digest sha256")));
+			return scope.Close(Undefined());
+		}
+
+		Local<Number> num ;
+		//printf("err %s\n",asdigest.c_str());
+		if(asdigest == std::string(*data)) {			
+			num = Number::New(0);
+		} else {
+			num = Number::New(1);
+		}
+		return scope.Close(num);
+}
+
+
+
 Handle<Value> DbInit(const Arguments& args) {
 	  HandleScope scope;
 		if (args.Length() < 1) {
@@ -288,6 +374,14 @@ void Init(Handle<Object> target) {
 			FunctionTemplate::New(Del)->GetFunction());
 	target->Set(String::NewSymbol("write"),
 			FunctionTemplate::New(Write)->GetFunction());
+
+	target->Set(String::NewSymbol("getRandom"),
+			FunctionTemplate::New(getRandom)->GetFunction());
+
+	target->Set(String::NewSymbol("asAuth"),
+			FunctionTemplate::New(asAuth)->GetFunction());
+
+
 
 	target->Set(String::NewSymbol("dbinit"),
 			FunctionTemplate::New(DbInit)->GetFunction());

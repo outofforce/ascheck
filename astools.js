@@ -95,7 +95,7 @@ exports.praseProto = function(data) {
 	key= data.substring(begin,end);
 	tmp_proto['key']=key;
 
-	if (op == 1 || op == 4) {
+	if (op == 1 || op == 4 || op == 0) {
 		// add( check dup)  or set has value  
 		var valuelen = data.substring(6,10);
 		begin=end;

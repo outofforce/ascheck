@@ -13,6 +13,7 @@
 #include <string>
 #include <map>
 #include <zmq.h>
+#include <openssl/hmac.h>
 #include "ascheck.h"
 
 /*
@@ -23,6 +24,8 @@
 
 #define BUFFER_SIZE 512 
 
+
+
 class as_exception {
 	int _code;
 	std::string _msg;
@@ -31,6 +34,34 @@ class as_exception {
 		std::string what() {return _msg;}
 		int code() {return _code;}
 };
+
+int ashmac(const std::string &data, std::string &digest) {
+
+	HMAC_CTX ctx;
+	const char *key="dfs3f00_)*(&98634sdfasd;ldj0830iuoremzi0oer'zddf0s782-0234fjdfat";
+	unsigned char mdvalue[EVP_MAX_MD_SIZE];
+	unsigned int vlen;
+	const EVP_MD *md = EVP_sha256();
+	if(!md)
+		return -1;
+
+	HMAC_CTX_init(&ctx);
+	HMAC_Init(&ctx,key,strlen(key), md);
+	HMAC_Update(&ctx, (unsigned char*)data.c_str(), strlen(data.c_str()));
+	HMAC_Final(&ctx, mdvalue,&vlen);
+	HMAC_CTX_cleanup(&ctx);
+	unsigned char out[EVP_MAX_MD_SIZE*2+1];
+	char *p = (char *)out;
+	for (int i=0;i<(int)vlen;i++)
+	{
+		sprintf(p,"%02x",(unsigned int)mdvalue[i]);
+		p += 2;
+	}
+	*p='\0';
+	digest = (char*)out;
+	return 0;
+}
+
 
 class ashash {
 	static unsigned long DJBhash(const char *p ,int len) {
@@ -48,7 +79,7 @@ class ashash {
 
 class asproto {
 	public:
-	enum OP {ADD=1,QUERY=2,DEL=3,WRITE=4};
+	enum OP {LOGIN=0,ADD=1,QUERY=2,DEL=3,WRITE=4};
 
 	static void checkLength(const std::string &value,const int len) {
 		if (value.length() > len)
@@ -56,7 +87,7 @@ class asproto {
 						"Data length is too large");
 	}
 
-	//TODO length need limit
+
 	static std::string make3Proto(
 			const std::string &part,
 			const std::string &key,
@@ -135,7 +166,6 @@ class service_domain {
 	std::map<int,svc_item>::iterator _servit;
 	bool _inited;
 	char buffer[BUFFER_SIZE];
-	void * ctx , *pb;
 	
 	void _getServerAddr() {
 
@@ -233,20 +263,8 @@ class service_domain {
 	}
 
 	public:
-	service_domain():_inited(false),ctx(NULL),pb(NULL){}
+	service_domain():_inited(false) {}
 	void release() {
-
-		/*
-		if (pb != NULL) {
-			zmq_close (pb);
-			pb = NULL;
-		}
-
-		if (ctx != NULL) {
-			zmq_term (ctx);
-			ctx = NULL;
-		}
-		*/
 	}
 	void init() {
 		int rc;
@@ -264,7 +282,7 @@ class service_domain {
 		_serv_map[0]=config_item;
 		std::string v1,v2;
 		v1 = asproto::make2Proto("","SERVICE_COUNT",asproto::QUERY);
-		pingpong(0,v1,v2);
+		pingpong(getSvc(0),v1,v2);
 		rc = asproto::pareProto(v2,v1);
 		if (rc!=0)
 			throw as_exception(AS_E_CONFIG_ERROR,"SERVICE_COUNT undefine in config server");
@@ -278,7 +296,7 @@ class service_domain {
 			svc_item item;
 			sprintf(num,"ASCHECK_ADDR_%d",i);	
 			v1 = asproto::make2Proto("",num,asproto::QUERY);
-			pingpong(0,v1,v2);
+			pingpong(getSvc(0),v1,v2);
 			rc = asproto::pareProto(v2,v1);
 			if (rc != 0) 
 				throw as_exception(AS_E_CONFIG_ERROR,
@@ -288,21 +306,13 @@ class service_domain {
 			char *p = (char*)v1.c_str();
 			t = strstr(p,":");
 			if (t == NULL)
-				throw as_exception(AS_E_ENV_CONFIG_SERVER_UNDFINE,"ASCHECK_ADDR format error! \n eg:127.0.0.1:3000"); 
+				throw as_exception(AS_E_ENV_CONFIG_SERVER_UNDFINE,
+									"ASCHECK_ADDR format error! \n eg:127.0.0.1:3000"); 
 
 
 			item.addr=std::string(p,t);
 			item.port=atoi(std::string(t+1).c_str());
-			/*
-			sprintf(num,"ASCHECK_PORT_%d",i);	
-			v1 = asproto::make2Proto("",num,asproto::QUERY);
-			pingpong(0,v1,v2);
-			rc = asproto::pareProto(v2,v1);
-			if (rc != 0) 
-				throw as_exception(AS_E_CONFIG_ERROR,
-						std::string(num)+" undefine in config server");
-			item.port=atoi(v1.c_str());
-			*/
+
 			item.connected = false;
 			item.socket_fd = 0;
 			printf("service_index(%d) %s:%d\n",i,item.addr.c_str(),item.port);
@@ -311,68 +321,13 @@ class service_domain {
 		_inited = true;
 
 
-		/*
-		ctx = zmq_ctx_new();
-		if (ctx == NULL)
-			throw as_exception(AS_E_ZMQ_CTX_NEW_ERROR,"create zmq ctx error");
-
-		pb = zmq_socket (ctx, ZMQ_REQ);
-		if (pb == NULL) 
-			throw as_exception(AS_E_ZMQ_SOCKET_ERROR,"create zmq socket error");
-
-		rc = zmq_connect(pb, _server_addr.c_str());
-		if (rc != 0)
-			throw as_exception(AS_E_ZMQ_CONNECT_ERROR,"zmq connect to server error");
-
-
-		std::string key,buf;
-
-		key = "SERVICE_COUNT";
-		my_msg_send(pb,key);
-
-		my_msg_recv(pb,buf);
-
-
-		if (buf.length() == 0) 
-			throw as_exception(AS_E_ZMQ_RECV_DATA_IS_NULL,"zmq recieve empty data");
-
-
-		char num[128];
-		_s_count = atoi(buf.c_str());
-		printf("total service num = %d\n",_s_count);
-
-		// TODO need check error !
-		for (int j=0;j<_s_count;j++) {
-			int i=j+1; 
-			svc_item item;
-			sprintf(num,"ASCHECK_ADDR_%d",i);	
-			my_msg_send(pb,num);
-			my_msg_recv(pb,buf);
-			if (buf.length() == 0) 
-				throw as_exception(AS_E_ZMQ_RECV_DATA_IS_NULL,"zmq recieve empty data");
-			item.addr=buf;
-			sprintf(num,"ASCHECK_PORT_%d",i);	
-			my_msg_send(pb,num);
-			my_msg_recv(pb,buf);
-			if (buf.length() == 0) 
-				throw as_exception(AS_E_ZMQ_RECV_DATA_IS_NULL,"zmq recieve empty data");
-			item.port=atoi(buf.c_str());
-			item.connected = false;
-			item.socket_fd = 0;
-			printf("service_index(%d) %s:%d\n",i,item.addr.c_str(),item.port);
-			_serv_map[i]=item;
-		}
-
-		rc = zmq_close (pb);
-		rc = zmq_term (ctx);
-		*/
 
 	}
 
-	void pingpong(int index,const std::string &sbuf,std::string &rbuf) {
+	void pingpong(int in_fd,const std::string &sbuf,std::string &rbuf) {
 
 		// TODO  sometimes we need recive and send times to finish the job. 
-		int client_socket = getSvc(index);
+		int client_socket = in_fd;///getSvc(index);
 		int ret = send(client_socket,sbuf.c_str(),sbuf.length(),0);
 		if (ret < 0) {
 			throw as_exception(AS_E_TCP_SEND_DATA_ERROR,"tcp send error");
@@ -410,12 +365,37 @@ class service_domain {
 				}
 			else {
 				int rc = init_socket(_servit->second.addr,_servit->second.port);
+				login(rc,index);
 				_servit->second.count++;
 				_servit->second.socket_fd = rc;
 				_servit->second.connected = true;
 				return rc;
 			}
 		}
+	}
+
+	void login(int fd,int index) {
+			std::string v1,v2;
+			int rc;
+			v1 = asproto::make2Proto("","login",asproto::LOGIN);
+			pingpong(fd,v1,v2);
+			rc = asproto::pareProto(v2,v1);
+			if (rc != 0) 
+				throw as_exception(AS_E_LOGIN_ERROR,
+						std::string("")+" Login error :" + v1);
+
+
+			rc = ashmac(v1,v2);
+			if (rc !=0)
+				throw as_exception(AS_E_CRYPTO_UNSUPPORT,
+						" Unsupport cypto type ! ");
+			v1 = asproto::make3Proto("","veryfiy",v2,asproto::LOGIN);
+			pingpong(fd,v1,v2);
+			rc = asproto::pareProto(v2,v1);
+			if (rc != 0) 
+				throw as_exception(AS_E_LOGIN_ERROR,
+						std::string("")+" Login veryfiy error :" + v1);
+
 	}
 
 	void closeByIndex(int index) {
@@ -481,7 +461,7 @@ int ascheck::add(
 	domain.init() ;
 	int index = ashash::getHashIndex(key,domain.getSvcCount());
 	v1 = asproto::make3Proto(part,key,value,asproto::ADD);
-	domain.pingpong(index,v1,v2);
+	domain.pingpong(domain.getSvc(index),v1,v2);
 	int rc = asproto::pareProto(v2,v1);
 
 	if (rc==0)
@@ -518,7 +498,7 @@ int ascheck::query(
 		domain.init() ;
 		int index = ashash::getHashIndex(key,domain.getSvcCount());
 		v1 = asproto::make2Proto(part,key,asproto::QUERY);
-		domain.pingpong(index,v1,v2);
+		domain.pingpong(domain.getSvc(index),v1,v2);
 		int rc = asproto::pareProto(v2,v1);
 
 		if (rc==0) {
@@ -557,7 +537,7 @@ int ascheck::del(
 		domain.init() ;
 		int index = ashash::getHashIndex(key,domain.getSvcCount());
 		v1 = asproto::make2Proto(part,key,asproto::DEL);
-		domain.pingpong(index,v1,v2);
+		domain.pingpong(domain.getSvc(index),v1,v2);
 		int rc = asproto::pareProto(v2,v1);
 
 		if (rc==0)

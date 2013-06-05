@@ -11,7 +11,7 @@
             '/home/fanglf/src/leveldb-1.9.0/include '
           ],
           'libraries': [
-            '-L/home/fanglf/src/leveldb-1.9.0 -lleveldb '
+            '-L/home/fanglf/src/leveldb-1.9.0 -lleveldb -lcrypto -Wno-deprecated-declarations'
           ]
         }],
         ['OS=="mac"', {
@@ -19,7 +19,7 @@
             '/Users/outofforce/Work/src/leveldb-1.9.0/include '
           ],
           'libraries': [
-            '-L/Users/outofforce/Work/src/leveldb-1.9.0 -lleveldb '
+            '-L/Users/outofforce/Work/src/leveldb-1.9.0 -lleveldb -lcrypto -Wno-deprecated-declarations'
           ]
         }]
       ]

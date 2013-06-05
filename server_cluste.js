@@ -134,33 +134,68 @@ config_ready_event.on('readygo',function() {
 			});
 
 			var data  = '';
+			var veryfied = false;
+			var random_s = '';
 			c.on('data',function(buf) {
 
 				data += buf.toString();
-				//console.log(buf);
+
 				//console.log(data.toString());
+				
 				if (data.indexOf('\r\n') != -1) { 
-					//console.log("in HERE");
 
 					var tp = astool.praseProto(data);
-					if (tp['op'] == 1) {
-						// check
-						c.write('0'+db.add(tp['key'],tp['value'],tp['part'])+'\r\n');
+					if (veryfied == false) {
+						if (tp['op'] == 0) {
+							if (tp['key'] == 'login') {
+								// login 
+								random_s = db.getRandom();
+								veryfied = false;
+								c.write('00'+random_s+'\r\n');
+								//console.log('send:' + random_s);
+							} else if ((tp['key'] == 'veryfiy') && (db.asAuth(random_s,tp['value']) == 0)) {
+								//console.log('reive veryfiy data: ' + tp['value']);
+								//if (db.asAuth(random_s,tp['value']) == 0) {
+									//console.log('sucess log');
+									random_s='';
+									veryfied = true;
+									c.write('00'+'Login Sucess\r\n');
 
-					} else if (tp['op'] == 2)  {
-						// query
-						var temp = db.query(tp['key'],tp['part']);
-						if (temp.ok == 1) {
-							c.write('01'+'\r\n');
+							} else {
+									random_s='';
+									data='';
+									veryfied = false;
+									console.log('Not A Valid Connection 1');
+									c.end();
+							}
 						} else {
-							c.write('00'+temp.v+'\r\n');
+									random_s='';
+									data='';
+									veryfied = false;
+									console.log('Not A Valid Connection 3');
+									c.end();
 						}
+					} else {
 
-					} else if (tp['op'] == 3)  {
-						// del
-						c.write('0'+db.del(tp['key'],tp['part'])+'\r\n');
+						if (tp['op'] == 1) {
+							// check
+							c.write('0'+db.add(tp['key'],tp['value'],tp['part'])+'\r\n');
 
-					} 
+						} else if (tp['op'] == 2)  {
+							// query
+							var temp = db.query(tp['key'],tp['part']);
+							if (temp.ok == 1) {
+								c.write('01'+'\r\n');
+							} else {
+								c.write('00'+temp.v+'\r\n');
+							}
+
+						} else if (tp['op'] == 3)  {
+							// del
+							c.write('0'+db.del(tp['key'],tp['part'])+'\r\n');
+
+						} 
+					}
 
 					data="";
 
