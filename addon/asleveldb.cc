@@ -77,26 +77,9 @@ int ashmac(const std::string &data, std::string &digest) {
 }
 
 std::string asGetUUID() {
-
 	std::string out;
 	asRandomString(128,&out);
 	return out;
-
-	/*
-	unsigned char out[32*4+1];
-	char *p = (char *)out;
-	uuid_t uu;
-	for (int j=0;j<4;j++){
-		uuid_generate(uu);
-		for (int i=0;i<16;i++)
-		{
-			sprintf(p,"%02x",(unsigned int)uu[i]);
-			p += 2;
-		}
-	}
-	*p='\0';
-	return (char *)out;
-	*/
 }
 
 int getDataFromString(
