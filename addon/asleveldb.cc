@@ -2,13 +2,51 @@
 
 #include <leveldb/db.h>
 #include <openssl/hmac.h>
-#include <uuid/uuid.h>
+#include <sys/time.h>
+
 
 #include <map>
 using namespace v8;
 
+class Random {
+	private:
+		uint32_t seed_;
+	public:
+		
+		Random() : seed_(0) { }
+		void setSeed(uint32_t s) { seed_= s & 0x7fffffffu;  }
+		
+
+		uint32_t Next() {
+			static const uint32_t M = 2147483647L;   // 2^31-1
+			static const uint64_t A = 16807;  // bits 14, 8, 7, 5, 2, 1, 0
+			uint64_t product = seed_ * A;
+
+			seed_ = static_cast<uint32_t>((product >> 31) + (product & M));
+			if (seed_ > M) {
+				seed_ -= M;
+			}
+			return seed_;
+		}
+		uint32_t Uniform(int n) { return Next() % n; }
+
+		bool OneIn(int n) { return (Next() % n) == 0; }
+
+		uint32_t Skewed(int max_log) {
+			return Uniform(1 << Uniform(max_log + 1));
+		}
+};
+
 leveldb::DB *db = NULL;	
 leveldb::Status status;
+Random asrnd;
+
+void asRandomString(int len, std::string* dst) {
+	dst->resize(len);
+	for (int i = 0; i < len; i++) {
+		(*dst)[i] = static_cast<char>(' ' + asrnd.Uniform(95));  
+	}
+}	
 
 
 int ashmac(const std::string &data, std::string &digest) {
@@ -39,6 +77,12 @@ int ashmac(const std::string &data, std::string &digest) {
 }
 
 std::string asGetUUID() {
+
+	std::string out;
+	asRandomString(128,&out);
+	return out;
+
+	/*
 	unsigned char out[32*4+1];
 	char *p = (char *)out;
 	uuid_t uu;
@@ -52,6 +96,7 @@ std::string asGetUUID() {
 	}
 	*p='\0';
 	return (char *)out;
+	*/
 }
 
 int getDataFromString(
@@ -385,6 +430,11 @@ void Init(Handle<Object> target) {
 
 	target->Set(String::NewSymbol("dbinit"),
 			FunctionTemplate::New(DbInit)->GetFunction());
+
+	struct timeval tvs;
+	gettimeofday(&tvs, NULL);
+	asrnd.setSeed((uint32_t)(tvs.tv_usec%1000000));
+
 
 
 }
