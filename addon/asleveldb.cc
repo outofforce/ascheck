@@ -1,25 +1,76 @@
-#include <node.h>
-
+#include <node.h> 
 #include <leveldb/db.h>
 #include <openssl/hmac.h>
 #include <sys/time.h>
 
 
 #include <map>
+#include <list>
 using namespace v8;
 
-class Random {
+
+class asLRU_cache {
+	private:
+		size_t _capacity;
+		std::list<std::string> _cache;
+		std::list<std::string>::iterator _it;
+
+	public:
+		asLRU_cache(size_t capacity):_capacity(capacity) {
+		}
+		void setCapacity(size_t capacity) { _capacity = capacity ;} 
+		int pullLeastUse(std::string &name) {
+			if (_cache.empty()) return -1;
+			_it = _cache.end();
+			_it--;
+			name = (*_it);
+			_cache.erase(_it);
+			return 0;
+		}
+
+		int use(const std::string &index) {
+			_it = find(index);
+			if (_it != _cache.end())
+			{
+				_cache.erase(_it);
+				_cache.push_front(index);
+
+			} else {
+				if (_cache.size() > _capacity)
+					return -1;
+				else 
+					_cache.push_front(index);
+			}
+			return 0;
+		}
+		bool isFull() { return _cache.size() > _capacity; }
+
+		void log() {
+			for (_it=_cache.begin();_it != _cache.end() ;_it++)
+				printf("%s\t",(*_it).c_str());
+			printf("\n");
+		}
+
+		std::list<std::string>::iterator  find(const std::string &name) {
+			for (_it=_cache.begin();_it != _cache.end() ;_it++)
+				if ((*_it) == name) return _it;
+			return _cache.end();
+		}
+};
+
+
+class asRandom {
 	private:
 		uint32_t seed_;
 	public:
-		
-		Random() : seed_(0) { }
+
+		asRandom() : seed_(0) { }
 		void setSeed(uint32_t s) { seed_= s & 0x7fffffffu;  }
-		
+
 
 		uint32_t Next() {
 			static const uint32_t M = 2147483647L;   // 2^31-1
-			static const uint64_t A = 16807;  // bits 14, 8, 7, 5, 2, 1, 0
+			static const uint64_t A = 16807;  
 			uint64_t product = seed_ * A;
 
 			seed_ = static_cast<uint32_t>((product >> 31) + (product & M));
@@ -39,7 +90,9 @@ class Random {
 
 leveldb::DB *db = NULL;	
 leveldb::Status status;
-Random asrnd;
+asRandom asrnd;
+asLRU_cache asLRU(20);
+
 
 void asRandomString(int len, std::string* dst) {
 	dst->resize(len);
@@ -103,7 +156,6 @@ int getDataFromString(
 			return -1;
 		}
 	}
-
 }
 
 int getDataFromString(
@@ -156,36 +208,44 @@ class db_pool {
 				}
 			} 
 
-		  if (getDataFromString(src,"DB_block_size",t_v) == 0) {
-					_db_block_size=t_v;
-					printf("\tDB_CONFIG: block_size = %lu\n",t_v);
+			if (getDataFromString(src,"DB_block_size",t_v) == 0) {
+				_db_block_size=t_v;
+				printf("\tDB_CONFIG: block_size = %lu\n",t_v);
 			} 
 
-		  if (getDataFromString(src,"DB_write_buffer_size",t_v) == 0) {
-					_db_write_buffer_size=t_v;
-					printf("\tDB_CONFIG: write_buffer_size= %lu\n",t_v);
+			if (getDataFromString(src,"DB_write_buffer_size",t_v) == 0) {
+				_db_write_buffer_size=t_v;
+				printf("\tDB_CONFIG: write_buffer_size= %lu\n",t_v);
 			} 
 
-		  if (getDataFromString(src,"DB_max_open_files",t_v) == 0) {
-					_db_max_open_files=(int)t_v;
-					printf("\tDB_CONFIG: max_open_files = %lu\n",t_v);
+			if (getDataFromString(src,"DB_max_open_files",t_v) == 0) {
+				_db_max_open_files=(int)t_v;
+				printf("\tDB_CONFIG: max_open_files = %lu\n",t_v);
 			} 
 		}
-		
+
 	public:
 		void init(const std::string &index,const std::string &prefix,const std::string &dbarg) {
 			if (index.length() == 0)
-					_db_path = prefix+"/";
+				_db_path = prefix+"/";
 			else 
-				 _db_path = prefix+"/"+index+"_";
+				_db_path = prefix+"/"+index+"_";
 
 			_loadDbConfig(dbarg);
-			
+
 			//printf("%s\n",_db_path.c_str());
 
 		}
 
-		leveldb::DB* getDbByName(std::string dbname) {
+		leveldb::DB* getDbByName(const std::string &dbname) {
+			asLRU.use(dbname);
+			if (asLRU.isFull()) {
+				std::string closedbname;
+				if (0==asLRU.pullLeastUse(closedbname))
+						closeByName(closedbname);
+			}
+
+
 			dbit=_db_pool.find(dbname);
 			if (dbit == _db_pool.end()) {
 				leveldb::Options options;	
@@ -194,8 +254,7 @@ class db_pool {
 				if (_db_max_open_files>0)
 					options.max_open_files = _db_max_open_files;
 
-				if (_db_block_size>0)
-					options.block_size= _db_block_size;
+				if (_db_block_size>0) options.block_size= _db_block_size;
 
 				if (_db_write_buffer_size>0)
 					options.write_buffer_size= _db_write_buffer_size;
@@ -207,7 +266,7 @@ class db_pool {
 
 				if (!status.ok()) {
 					ThrowException(
-						Exception::TypeError(String::New(status.ToString().c_str())));
+							Exception::TypeError(String::New(status.ToString().c_str())));
 				}
 
 				_db_pool[dbname]=db;
@@ -216,7 +275,7 @@ class db_pool {
 				return dbit->second;
 			}
 		}
-		
+
 		void closeByName(std::string dbname) {
 			dbit=_db_pool.find(dbname);
 			if (dbit != _db_pool.end()) {
@@ -238,158 +297,158 @@ db_pool _pool;
 
 
 Handle<Value> Add(const Arguments& args) {
-	  HandleScope scope;
+	HandleScope scope;
 
-		if (args.Length() < 3) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	if (args.Length() < 3) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		std::string value;
-		v8::String::AsciiValue key(args[0]); 
-		v8::String::AsciiValue invalue(args[1]); 
-		v8::String::AsciiValue dbname(args[2]); 
-		db = _pool.getDbByName(*dbname);
+	std::string value;
+	v8::String::AsciiValue key(args[0]); 
+	v8::String::AsciiValue invalue(args[1]); 
+	v8::String::AsciiValue dbname(args[2]); 
+	db = _pool.getDbByName(*dbname);
 
-		Local<Number> num ;
-		status = db->Get(leveldb::ReadOptions(), *key, &value);		
-		if(!status.ok()) {			
-			//printf("err %s\n",status.ToString().c_str());
-			db->Put(leveldb::WriteOptions(), *key, *invalue);		
-			num = Number::New(0);
-		} else {
-			num = Number::New(1);
-		}
-		return scope.Close(num);
+	Local<Number> num ;
+	status = db->Get(leveldb::ReadOptions(), *key, &value);		
+	if(!status.ok()) {			
+		//printf("err %s\n",status.ToString().c_str());
+		db->Put(leveldb::WriteOptions(), *key, *invalue);		
+		num = Number::New(0);
+	} else {
+		num = Number::New(1);
+	}
+	return scope.Close(num);
 }
 
 Handle<Value> Write(const Arguments& args) {
-	  HandleScope scope;
+	HandleScope scope;
 
-		if (args.Length() < 3) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	if (args.Length() < 3) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		std::string value;
-		v8::String::AsciiValue key(args[0]); 
-		v8::String::AsciiValue invalue(args[1]); 
-		v8::String::AsciiValue dbname(args[2]); 
-		db = _pool.getDbByName(*dbname);
-		status = db->Put(leveldb::WriteOptions(), *key, *invalue);		
-		if(!status.ok()) {			
-			//printf("err %s\n",status.ToString().c_str());
-			Local<Number> num = Number::New(1);
-			return scope.Close(num);
-		} else {
-			Local<Number> num = Number::New(0);
-			return scope.Close(num);
-		}
+	std::string value;
+	v8::String::AsciiValue key(args[0]); 
+	v8::String::AsciiValue invalue(args[1]); 
+	v8::String::AsciiValue dbname(args[2]); 
+	db = _pool.getDbByName(*dbname);
+	status = db->Put(leveldb::WriteOptions(), *key, *invalue);		
+	if(!status.ok()) {			
+		//printf("err %s\n",status.ToString().c_str());
+		Local<Number> num = Number::New(1);
+		return scope.Close(num);
+	} else {
+		Local<Number> num = Number::New(0);
+		return scope.Close(num);
+	}
 }
 
 Handle<Value> Del(const Arguments& args) {
-	  HandleScope scope;
+	HandleScope scope;
 
-		if (args.Length() < 2) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	if (args.Length() < 2) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		std::string value;
-		v8::String::AsciiValue key(args[0]); 
-		v8::String::AsciiValue dbname(args[1]); 
-		db = _pool.getDbByName(*dbname);
-		status = db->Delete(leveldb::WriteOptions(), *key);		
-		Local<Number> num = Number::New(1);
-		if(!status.ok()) {			
-			//printf("err %s\n",status.ToString().c_str());
-			num = Number::New(1);
-		} else {
-			num = Number::New(0);
-		}
-		return scope.Close(num);
+	std::string value;
+	v8::String::AsciiValue key(args[0]); 
+	v8::String::AsciiValue dbname(args[1]); 
+	db = _pool.getDbByName(*dbname);
+	status = db->Delete(leveldb::WriteOptions(), *key);		
+	Local<Number> num = Number::New(1);
+	if(!status.ok()) {			
+		//printf("err %s\n",status.ToString().c_str());
+		num = Number::New(1);
+	} else {
+		num = Number::New(0);
+	}
+	return scope.Close(num);
 }
 
 
 Handle<Value> Query(const Arguments& args) {
-	  HandleScope scope;
-		if (args.Length() < 2) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	HandleScope scope;
+	if (args.Length() < 2) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		Local<Object> info = Object::New();
+	Local<Object> info = Object::New();
 
-		std::string value = "";
-		v8::String::AsciiValue key(args[0]); 
-		v8::String::AsciiValue dbname(args[1]); 
-		db = _pool.getDbByName(*dbname);
-		status = db->Get(leveldb::ReadOptions(), *key, &value);		
-		if(!status.ok()) {			
-			//printf("err %s\n",status.ToString().c_str());
-			info->Set(String::New("ok"), Number::New(1));
-			info->Set(String::New("v"), String::Empty());
-		} else {
-			info->Set(String::New("ok"), Number::New(0));
-			info->Set(String::New("v"), String::New(value.c_str()));
-		}
-		return scope.Close(info);
+	std::string value = "";
+	v8::String::AsciiValue key(args[0]); 
+	v8::String::AsciiValue dbname(args[1]); 
+	db = _pool.getDbByName(*dbname);
+	status = db->Get(leveldb::ReadOptions(), *key, &value);		
+	if(!status.ok()) {			
+		//printf("err %s\n",status.ToString().c_str());
+		info->Set(String::New("ok"), Number::New(1));
+		info->Set(String::New("v"), String::Empty());
+	} else {
+		info->Set(String::New("ok"), Number::New(0));
+		info->Set(String::New("v"), String::New(value.c_str()));
+	}
+	return scope.Close(info);
 }
 
 
 Handle<Value> getRandom(const Arguments& args) {
-	  HandleScope scope;
-		std::string value = asGetUUID();
-		return scope.Close(String::New(value.c_str()));
+	HandleScope scope;
+	std::string value = asGetUUID();
+	return scope.Close(String::New(value.c_str()));
 }
 
 Handle<Value> asAuth(const Arguments& args) {
-	  HandleScope scope;
+	HandleScope scope;
 
-		if (args.Length() < 2) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	if (args.Length() < 2) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		v8::String::AsciiValue randomdata(args[0]); 
-		v8::String::AsciiValue data(args[1]); 
+	v8::String::AsciiValue randomdata(args[0]); 
+	v8::String::AsciiValue data(args[1]); 
 
-	  //printf("err %d,%s,%s\n",args.Length(),*randomdata,*data);
+	//printf("err %d,%s,%s\n",args.Length(),*randomdata,*data);
 
-		std::string asdigest;
-    int rc = ashmac(*randomdata,asdigest); 
-	  //printf("err==: %s\n",asdigest.c_str());
-		if (rc !=0) {
-			ThrowException(Exception::TypeError(String::New("Unkown message digest sha256")));
-			return scope.Close(Undefined());
-		}
+	std::string asdigest;
+	int rc = ashmac(*randomdata,asdigest); 
+	//printf("err==: %s\n",asdigest.c_str());
+	if (rc !=0) {
+		ThrowException(Exception::TypeError(String::New("Unkown message digest sha256")));
+		return scope.Close(Undefined());
+	}
 
-		Local<Number> num ;
-		//printf("err %s\n",asdigest.c_str());
-		if(asdigest == std::string(*data)) {			
-			num = Number::New(0);
-		} else {
-			num = Number::New(1);
-		}
-		return scope.Close(num);
+	Local<Number> num ;
+	//printf("err %s\n",asdigest.c_str());
+	if(asdigest == std::string(*data)) {			
+		num = Number::New(0);
+	} else {
+		num = Number::New(1);
+	}
+	return scope.Close(num);
 }
 
 
 
 Handle<Value> DbInit(const Arguments& args) {
-	  HandleScope scope;
-		if (args.Length() < 1) {
-			ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
-			return scope.Close(Undefined());
-		}
+	HandleScope scope;
+	if (args.Length() < 1) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
 
-		String::AsciiValue path(args[0]);
-		String::AsciiValue index(args[1]);
-		String::AsciiValue dbconfig(args[2]);
+	String::AsciiValue path(args[0]);
+	String::AsciiValue index(args[1]);
+	String::AsciiValue dbconfig(args[2]);
 
-		_pool.init(*index,*path,*dbconfig);
-		Local<Number> num = Number::New(0);
-		return scope.Close(num);
+	_pool.init(*index,*path,*dbconfig);
+	Local<Number> num = Number::New(0);
+	return scope.Close(num);
 }
 
 
