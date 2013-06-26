@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
 	string value;
 	while (true) {
 		my_msg_recv(sb,key) ;
-		printf("rvc key = %s\n",key.c_str());
+		//printf("rvc key = %s\n",key.c_str());
 		status = db->Get(leveldb::ReadOptions(), key, &value);
 		if(!status.ok()) {
 			value = "NULL";

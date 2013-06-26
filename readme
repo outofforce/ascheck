@@ -2,31 +2,34 @@ Ascheck 设计
 架构
  
 CLIENT ：
-提供了一组API 供应用程序调用 ， 客户端第一次运行时候，从环境变量读取config-server的地址信息，让后通过zeromq连接config-server 获取所有服务1… N的信息，放入内存中，然后客户端根据key的hash值将 key映射到 [1，N] , 根据映射的值从内存中查找对应的服务，创建tcp连接并发送请求。所有tcp连接都为长连接，在客户端程序退出时关闭。  客户端的hash算法不是一致性hash算法 。
+提供了一组API 供应用程序调用 ， 客户端第一次运行时候，从环境变量读取config-server的地址信息，让后通过zeromq连接config-server 获取所有服务1… N的信息，放入内存中，然后客户端根据key的hash值将 key映射到 [1，N] , 根据映射的值从内存中查找对应的服务，创建tcp连接并发送请求。所有tcp连接都为长连接，在客户端程序退出时关闭。  客户端的hash算法不是一致性hash算法 。客户端每次和服务器建立连接后，需要鉴权，防止恶意连接。
 SERVER ：
-使用nodejs 开发，负责解析请求并且根据请求执行数据库操作，这里的数据库为leveldb，一个服务对应多个leveldb，分库标准为客户端api传入的part参数。对于 server (1) ,所有的leveldb 名称为 1_part ，server (2)，所有的leveldb名称为 2_part ,以此类推。
+负责解析请求并且根据请求执行数据库操作，数据库为文件数据库，一个服务对应多个文件库，分库标准为客户端api传入的part参数。对于 server (1) ,所有的leveldb 名称为 1_part ，server (2)，所有的leveldb名称为 2_part ,以此类推。每个服务端维护一个打开的数据库池，根据LRU算法关闭很久不使用数据库。
 CONFIG-SERVER：
-	目前为简单的zmq服务，需要改造，目前所有的配置也保存一个指定的leveldb中。 
+	config-server  给client 提供配置服务，主要包括服务节点的地址信息，服务节点的个数信息， 文件数据库的配置信息等 ，所有的服务信息配置在加密的文件数据库，在config-server启动后根据lic 文件加载配置。
 
 
 代码目录介绍
 代码保存在github了 https://github.com/outofforce/ascheck
-依赖 : leveldb-1.9.0+  , zeromq-3.2.2+, node-v0.8.20+
+依赖 : leveldb-1.9.0+  , node-v0.8.20+，openssl 
 目录介绍 
-
-addon 是 nodejs 的 c 扩展  ascheck 服务端对 leveldb 的操作在这里
-include 一些测试用的头文件
-src  实现了客户端代码 ，一个简单的测试程序 和 config-server
-test 老的测试代码，无用
 Makefile  编译文件
+addon 是 nodejs 的 c 扩展  ascheck 服务端对 leveldb 的操作在这里
+ascheck.conf  作废，老得配置问题件
+astools.js 公共函数
 binding.gyp  addon 用编译文件
 client.js  无用
+config.js 无用
+config_client.js 无用
+config_server.js  配置服务器config-server 
 readme
-server.js 单进程服务端程序
+server.js  无用
 server_cluste.js   多进程服务端程序
-server_config.js  用来配置config-server 的数据库程序
+src  client 动态连接库和 测试程序
+test 老的测试代码，无用
+
 编译
-需要修改 src/Makefile 和 biinding.gyp 中 zmq 和 leveldb 对应目录。 然后 make， make 会调用 node-gyp 来编译 nodejs 的扩展程序
+需要修改 src/Makefile 和 biinding.gyp 中 leveldb 和  openssl  对应目录。 然后 make， make 会调用 node-gyp 来编译 nodejs 的扩展程序
 API 介绍
 	C++ API定义在 src/ascheck.h  下面 
 class ascheck {
@@ -51,91 +54,42 @@ public:
          */ 
         static int del(const std::string &part,const std::string &key);
 };
-	参数 part 为表名称 ， api 被第一次调用的时候会查找环境变量ASCHECK_CONFIG_SERVER ，这个环境变量指向配置服务器格式如下 ：export ASCHECK_CONFIG_SERVER=tcp://127.0.0.1:3000
-	使用api 只要将 ascheck.h 和 libascheck.so拷贝到指定目录下编译连链接就可以 。
+	参数 part 为表名称 ， api 被第一次调用的时候会查找环境变量ASCHECK_CONFIG_SERVER ，这个环境变量指向配置服务器格式如下 ：export ASCHECK_CONFIG_SERVER=127.0.0.1:3000
+	使用api 只要将 ascheck.h 和 libascheck.so拷贝到指定目录下编译连链接就可以 。 
+API描述
+1. api 的异常在内部截获，不往外抛，通过返回小于0来确定错误。具体错误含义在ascheck.h里面定义，由调用的应用程序判断。 如果tcp发生异常，api 不会重连接而是直接返回小于0的错误码
+2.api 维护一个大小等于服务节点个数的tcp长连接池，这些长连接不会被释放，直到程序退出。 
+3. part 和 value 不能包含  ‘\r\n’   ， part ，key 的最大长度为 99 ，value 的最大长度为 9999 
+
 应用程序介绍
-SERVER_CONFIG.JS :
-	node server_config.js    // 注意因为 leveldb 只能由一个进程打开 ，所以运行这个脚本时候，配置服务程序zmq_config 应该要先退出 。 
-db.dbinit("/tmp","");
-function init_config() {
-         // 设置配置数据 
-         db.write("ASCHECK_ADDR_1",'127.0.0.1','config');
-         db.write("ASCHECK_PORT_1",'3001','config');
-         db.write("ASCHECK_ADDR_2",'127.0.0.1','config');
-         db.write("ASCHECK_PORT_2",'3002','config');
-         db.write("SERVICE_COUNT",'2','config');
-}
-	这里编号为 i 的服务地址和端口配置为 ASCHECK_ADDR_i 和 ASCHECK_PORT_i，i 不能为 0。SERVICE_COUNT 为要启动的服务的个数。 db.dbinit("/tmp","") 表示把配置数据库放到 /tmp 下面 。 db.write("ASCHECK_ADDR_1",'127.0.0.1','config');  第三个参数为config ，标识配置数据的名称为 config ，也就是配置数据保存到/tmp/config 
-SRC/ZMQ_CONFIG:
-	./zmq_config -d /tmp/config  -u tcp://127.0.0.1:3000
-	-d 配置数据库所在的位置
-	-u 服务启动的方式
+CONFIG_SERVER.JS :
+	node config_server    -d /tmp –p 3000 –n config   配置服务是一个tcp 服务器
+-d  配置数据库所在的路径
+	-n 配置数据库名称
+	-p 监听的端口 
+	
 SERVER_CLUSTE.JS
-	node server_cluste.js -n 3 -b 1 -d /tmp –p 3000
-	-n 一共启动几个服务
-	-b 服务id的开始值为 ，这个id 会映射到配置参数里面 ASCHECK_ADDR_i ，如果 n=3，b=1 ，那么程序会启动3个服务 ，他的id 为  1，2，3  ，对应的配置 ASCHECK_ADDR_1，ASCHECK_ADDR_2，ASCHECK_ADDR_3。 如果 n =3 ，b=2， 那么这三个服务的id 为 2，3，4 ，对应的配置 ASCHECK_ADDR_2，ASCHECK_ADDR_3，ASCHECK_ADDR_4  以此类推。 
-	-p 服务端口开始计算结点  ，如果 n = 3 ，b=1 ，p=3000 ，那么三个服务的监听端口分别为 3001，3002，3003，对应的配置节点 ASCHECK_PORT_1 ，ASCHECK_PORT_2，ASCHECK_PORT_3 。 如果 b=2 ，那么监听的端口为 3002，3003，3004。 需要修改对应的配置 
-	-d 保存数据库的目录  ，leveldb保存的位置 ，对于 id=1，d=/tmp的服务, 请求中 part= gprs201302 那么会生成一个leveldb保存到  /tmp/1_ gprs201302
-src/test
+	node server_cluste.js –-cfg_port 3000 –-cfg_addr 127.0.0.1  -d /tmp －n 2..8,11,12
+	（TODO） server的配置数据从 config_server 中获取 
+-n 这个clust 管理的节点  2..8,11,12 表示 管理节点2到8 ,11,12   （TODO）
+-d 保存数据库的目录  ，leveldb保存的位置 ，对于 n=1，d=/tmp 的服务, 请求中 part= gprs201302 那么会生成一个leveldb保存到  /tmp/1_ gprs201302
+	--cfg_addr 配置服务器ip  （TODO）
+	--cfg_port 配置服务器端口  （TODO）
+	服务端功能描述：
+1. 客户端连接到server_cluste.js的时候， server_cluster.js 会返回给客户端一串认证码，客户端将认证串加密后，返回给服务端，由服务端做鉴权。 
+2.服务端控制开发文件数据库的个数，根据 LRU 算法关闭不经常使用的文件数据库。 
+3. 服务端的可配置项目包括 
+		 DB_CompressionType  默认不压缩  ； 1 表示使用snappy 压缩
+		DB_block_size  文件数据库的块大小  默认4096
+		DB_write_buffer_size  文件数据库的写缓存 默认 4194304
+		DB_max_open_files   文件数据库可以打开的最大文件句柄数  默认 1000 
+	MAX_OPEN_DB   文件数据库池的容量
+
+
+SRC/TEST.JS
 ./test -t all -n gprs_20130401 -c 10000
 	-t  取值 test|all|addbench|querybench|delbench ，test 简单接口测试 ，其他为性能测试 
 	-n 就是api对应的part
 	-c 在 t不等于test 的时候有效，标识要处理多少请求
 	
-例子：
-[fanglf@localhost ascheck]$ node server_config.js 
-open db ctx = /tmp/config
-ASCHECK_ADDR_1= 127.0.0.1
-ASCHECK_PORT_1= 3001
-ASCHECK_ADDR_2= 127.0.0.1
-ASCHECK_PORT_2= 3002
-SERVICE_COUNT= 2
-[fanglf@localhost src]$ ./zmq_config -d /tmp/config -u tcp://127.0.0.1:3000
-[fanglf@localhost src]$ export ASCHECK_CONFIG_SERVER=tcp://127.0.0.1:3000
-[fanglf@localhost ascheck]$ node server_cluste.js -n 2 -b 1 -p 3000 -d /tmp       
-count = 2 begin = 1
-worker 10445 success!
-worker 10446 success!
-server 1 start at port 3001 ....
-server 2 start at port 3002 ....
-
-[fanglf@localhost src]$ ./test -t test -n gprs_20130401
-total service num = 2
-service_index(1) 127.0.0.1:3001
-service_index(2) 127.0.0.1:3002
-begin test ---- 
-        del key,not exist ==> Ok
-        add key ==> Ok
-        add dup key ==> Ok
-        query key ==> Ok
-        query key ,not exist ==> Ok
-        del key ==> Ok
-end test ---- 
-  serv(127.0.0.1:3001) handle request 6
-
-[fanglf@localhost src]$ ./test -t all -n gprs_20130401 -c 10000
-add bench .... 
-total service num = 2
-service_index(1) 127.0.0.1:3001
-service_index(2) 127.0.0.1:3002
-        deal 0
-deal 10000 use 396(ms),du = 0
-25252 transaction per second
-add bench .... end .... 
-
-query bench .... 
-deal 10000 use 367(ms)
-27247 transaction per second
-query bench .... end .... 
-
-del bench .... 
-        deal 0
-deal 10000 use 370(ms)
-27027 transaction per second
-del bench .... end .... 
-
-  serv(127.0.0.1:3001) handle request 14664
-  serv(127.0.0.1:3002) handle request 15336
-
-
 

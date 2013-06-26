@@ -20,7 +20,9 @@ process.argv.forEach(function (val, index, array) {
 	//console.log(index + ': ' + val);
 	if (val == "-n") 
 	count = process.argv[index+1];
-	else if (val == "--service_port") 
+	else if (val == "--cfg_port") 
+	serv_port = process.argv[index+1];
+	else if (val == "--cfg_addr") 
 	serv_port = process.argv[index+1];
 	else if (val == "-i")
 	index_str = process.argv[index+1];

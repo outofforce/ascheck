@@ -12,7 +12,7 @@
 #include <assert.h>
 #include <string>
 #include <map>
-#include <zmq.h>
+//#include <zmq.h>
 #include <openssl/hmac.h>
 #include "ascheck.h"
 
@@ -22,7 +22,7 @@
 #include <fcntl.h>
 */
 
-#define BUFFER_SIZE 512 
+#define BUFFER_SIZE 1024
 
 
 
@@ -184,6 +184,7 @@ class service_domain {
 		//_server_addr=p;
 		//_server_addr="tcp://127.0.0.1:3000";
 	}
+	/*
 
 	void  my_msg_send(void *sc, const std::string &data) {
 
@@ -225,6 +226,7 @@ class service_domain {
 			rc = zmq_getsockopt (sb, ZMQ_RCVMORE, &rcvmore, &sz);
 		}
 	}
+	*/
 
 
 	int init_socket(const std::string &addr,int port) {
