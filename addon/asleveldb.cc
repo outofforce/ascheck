@@ -14,6 +14,8 @@ class asLRU_cache {
 		size_t _capacity;
 		std::list<std::string> _cache;
 		std::list<std::string>::iterator _it;
+		//std::map<std::string,int> _index;
+		//std::map<std::string,int>::iterator _index_it;
 
 	public:
 		asLRU_cache(size_t capacity):_capacity(capacity) {
@@ -31,16 +33,9 @@ class asLRU_cache {
 		int use(const std::string &index) {
 			_it = find(index);
 			if (_it != _cache.end())
-			{
 				_cache.erase(_it);
-				_cache.push_front(index);
-
-			} else {
-				if (_cache.size() > _capacity)
-					return -1;
-				else 
-					_cache.push_front(index);
-			}
+			
+			_cache.push_front(index);
 			return 0;
 		}
 		bool isFull() { return _cache.size() > _capacity; }
@@ -193,8 +188,10 @@ class db_pool {
 		int _db_max_open_files;
 		size_t _db_write_buffer_size;
 		size_t _db_block_size;
+		int _accessCounter;
 
 		void _loadDbConfig(const std::string &src) {
+
 
 			_db_comp_type = leveldb::kNoCompression;
 			_db_max_open_files = 0; // use level default
@@ -233,16 +230,21 @@ class db_pool {
 
 			_loadDbConfig(dbarg);
 
+			_accessCounter=0;
 			//printf("%s\n",_db_path.c_str());
 
 		}
 
 		leveldb::DB* getDbByName(const std::string &dbname) {
 			asLRU.use(dbname);
-			if (asLRU.isFull()) {
+			_accessCounter++;
+			if (_accessCounter > 10000) {
 				std::string closedbname;
-				if (0==asLRU.pullLeastUse(closedbname))
+				while (asLRU.isFull()) {
+					if (0==asLRU.pullLeastUse(closedbname))
 						closeByName(closedbname);
+				}
+				_accessCounter=0;
 			}
 
 
@@ -369,6 +371,29 @@ Handle<Value> Del(const Arguments& args) {
 	return scope.Close(num);
 }
 
+Handle<Value> QueryCfg(const Arguments& args) {
+	HandleScope scope;
+	if (args.Length() < 2) {
+		ThrowException(Exception::TypeError(String::New("Wrong number of arguments")));
+		return scope.Close(Undefined());
+	}
+
+	Local<Object> info = Object::New();
+
+	std::string value = "";
+	v8::String::AsciiValue key(args[0]); 
+	v8::String::AsciiValue dbname(args[1]); 
+	db = _pool.getDbByName(*dbname);
+	status = db->Get(leveldb::ReadOptions(), *key, &value);		
+	if(!status.ok()) {			
+		info->Set(String::New("ok"), Number::New(1));
+		info->Set(String::New("v"), String::Empty());
+	} else {
+		info->Set(String::New("ok"), Number::New(0));
+		info->Set(String::New("v"), String::New(value.c_str()));
+	}
+	return scope.Close(info);
+}
 
 Handle<Value> Query(const Arguments& args) {
 	HandleScope scope;
@@ -467,6 +492,10 @@ void Init(Handle<Object> target) {
 
 	target->Set(String::NewSymbol("asAuth"),
 			FunctionTemplate::New(asAuth)->GetFunction());
+
+	target->Set(String::NewSymbol("queryCfg"),
+			FunctionTemplate::New(QueryCfg)->GetFunction());
+
 
 
 
